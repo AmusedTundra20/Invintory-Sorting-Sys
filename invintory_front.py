@@ -71,59 +71,6 @@ if "last_scanned_barcode" not in st.session_state:
 if "pending_scanned_barcode" not in st.session_state:
     st.session_state.pending_scanned_barcode = ""
 
-if "pending_auto_submit" not in st.session_state:
-    st.session_state.pending_auto_submit = False
-
-if "auto_send_on_scan" not in st.session_state:
-    st.session_state.auto_send_on_scan = False
-
-if "scan_action" not in st.session_state:
-    st.session_state.scan_action = "SORT"
-
-if "scan_quantity" not in st.session_state:
-    st.session_state.scan_quantity = 1
-
-if "scan_source" not in st.session_state:
-    st.session_state.scan_source = "streamlit-app-1"
-
-if "scan_location_hint" not in st.session_state:
-    st.session_state.scan_location_hint = "A"
-
-if "api_base_runtime" not in st.session_state:
-    st.session_state.api_base_runtime = DEFAULT_API_BASE
-
-if "auto_submit_message" not in st.session_state:
-    st.session_state.auto_submit_message = ""
-
-if "auto_submit_error" not in st.session_state:
-    st.session_state.auto_submit_error = ""
-
-
-# Process pending auto-submit at the top of the rerun cycle
-if st.session_state.pending_auto_submit and st.session_state.pending_scanned_barcode:
-    try:
-        scanned_now = st.session_state.pending_scanned_barcode
-
-        result = process_scan_request(
-            api_base=st.session_state.api_base_runtime,
-            barcode=scanned_now,
-            action=st.session_state.scan_action,
-            quantity=st.session_state.scan_quantity,
-            source=st.session_state.scan_source,
-            location_hint=st.session_state.scan_location_hint,
-        )
-
-        st.session_state.last_result = result
-        st.session_state.barcode_input = scanned_now
-        st.session_state.pending_scanned_barcode = ""
-        st.session_state.pending_auto_submit = False
-        st.session_state.auto_submit_message = result.get("message", "Scan completed.")
-        st.rerun()
-
-    except Exception as e:
-        st.session_state.pending_auto_submit = False
-        st.session_state.auto_submit_error = str(e)
-
 
 SCANNER_HTML = """
 <div class="scanner-wrap">
@@ -402,18 +349,9 @@ except AttributeError:
 st.title("Inventory Sorting System")
 st.caption("Streamlit frontend with ZXing-JS barcode scanner")
 
-if st.session_state.auto_submit_message:
-    st.success(st.session_state.auto_submit_message)
-    st.session_state.auto_submit_message = ""
-
-if st.session_state.auto_submit_error:
-    st.error(f"Auto send failed: {st.session_state.auto_submit_error}")
-    st.session_state.auto_submit_error = ""
-
 with st.sidebar:
     st.header("Backend Settings")
     api_base = st.text_input("Backend API URL", value=DEFAULT_API_BASE)
-    st.session_state.api_base_runtime = api_base
     if st.button("Refresh Inventory"):
         st.rerun()
 
@@ -440,23 +378,17 @@ with left:
         if scanned_barcode != st.session_state.last_scanned_barcode:
             st.session_state.last_scanned_barcode = scanned_barcode
             st.session_state.pending_scanned_barcode = scanned_barcode
-            st.session_state.barcode_input = scanned_barcode
-
-            if st.session_state.auto_send_on_scan:
-                st.session_state.pending_auto_submit = True
-
             st.rerun()
 
     st.divider()
     st.subheader("Scan Item")
 
-    auto_send = st.checkbox("Auto Send on Scan", key="auto_send_on_scan")
-    action = st.selectbox("Action", ["SORT", "IN", "OUT"], key="scan_action")
-    quantity = st.number_input("Quantity", min_value=1, step=1, value=1, key="scan_quantity")
-    source = st.text_input("Source", value="streamlit-app-1", key="scan_source")
-    location_hint = st.text_input("Location Hint", value="A", key="scan_location_hint")
+    action = st.selectbox("Action", ["SORT", "IN", "OUT"])
+    quantity = st.number_input("Quantity", min_value=1, step=1, value=1)
+    source = st.text_input("Source", value="streamlit-app-1")
+    location_hint = st.text_input("Location Hint", value="A")
 
-    if st.session_state.pending_scanned_barcode and not st.session_state.pending_auto_submit:
+    if st.session_state.pending_scanned_barcode:
         st.session_state.barcode_input = st.session_state.pending_scanned_barcode
         st.session_state.pending_scanned_barcode = ""
 
