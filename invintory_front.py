@@ -81,6 +81,7 @@ SCANNER_HTML = """
       <label for="camera-select"><strong>Camera:</strong></label>
       <select id="camera-select"></select>
     </div>
+
     <div class="scanner-buttons">
       <button id="zxing-start" type="button">Start Camera</button>
       <button id="zxing-stop" type="button">Stop Camera</button>
@@ -95,59 +96,105 @@ SCANNER_HTML = """
 
 SCANNER_CSS = """
 .scanner-wrap {
-  border: 1px solid #ddd;
-  border-radius: 12px;
-  padding: 12px;
-  background: white;
+  border: 1px solid #cbd5e1;
+  border-radius: 14px;
+  padding: 14px;
+  background: #ffffff;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.06);
 }
+
 #zxing-video {
   width: 100%;
   max-height: 360px;
-  border-radius: 10px;
-  background: black;
+  border-radius: 12px;
+  background: #000000;
+  border: 2px solid #111827;
 }
+
 .scanner-controls {
-  margin-top: 10px;
+  margin-top: 14px;
 }
+
 .control-group {
-  margin-bottom: 10px;
+  margin-bottom: 12px;
 }
+
+.control-group label {
+  display: block;
+  margin-bottom: 6px;
+  color: #111827;
+  font-weight: 700;
+  font-size: 14px;
+}
+
 #camera-select {
   width: 100%;
-  margin-top: 6px;
-  padding: 10px;
+  margin-top: 4px;
+  padding: 12px;
   border-radius: 10px;
-  border: 1px solid #d1d5db;
-  background: white;
-}
-.scanner-buttons {
-  display: flex;
-  gap: 10px;
-  flex-wrap: wrap;
-}
-.scanner-buttons button {
-  padding: 10px 14px;
-  border: none;
-  border-radius: 10px;
-  cursor: pointer;
+  border: 2px solid #cbd5e1;
+  background: #ffffff;
+  color: #111827;
+  font-size: 14px;
   font-weight: 600;
 }
+
+.scanner-buttons {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.scanner-buttons button {
+  flex: 1 1 140px;
+  min-width: 130px;
+  padding: 12px 16px;
+  border-radius: 12px;
+  cursor: pointer;
+  font-weight: 800;
+  font-size: 15px;
+  border: 2px solid transparent;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.15);
+  transition: transform 0.15s ease, filter 0.15s ease, box-shadow 0.15s ease;
+}
+
+.scanner-buttons button:hover {
+  transform: translateY(-1px);
+  filter: brightness(0.96);
+  box-shadow: 0 4px 10px rgba(0, 0, 0, 0.18);
+}
+
+.scanner-buttons button:active {
+  transform: translateY(0);
+}
+
 #zxing-start {
-  background: #d1fae5;
+  background: #16a34a;
+  color: #ffffff;
+  border-color: #166534;
 }
+
 #zxing-stop {
-  background: #fee2e2;
+  background: #dc2626;
+  color: #ffffff;
+  border-color: #991b1b;
 }
+
 #zxing-flip {
-  background: #dbeafe;
+  background: #2563eb;
+  color: #ffffff;
+  border-color: #1e3a8a;
 }
+
 .scanner-box {
-  margin-top: 10px;
-  padding: 10px;
+  margin-top: 12px;
+  padding: 12px;
   border-radius: 10px;
   background: #f8fafc;
-  border: 1px solid #e5e7eb;
-  word-break: break-all;
+  border: 1px solid #cbd5e1;
+  color: #111827;
+  word-break: break-word;
+  font-size: 14px;
 }
 """
 
