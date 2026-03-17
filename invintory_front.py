@@ -1,7 +1,5 @@
-import json
 import requests
 import streamlit as st
-import streamlit.components.v1 as components
 
 st.set_page_config(page_title="Inventory Sorting System", layout="wide")
 
@@ -38,18 +36,198 @@ def delete_item(api_base: str, barcode: str):
     return data
 
 
+def get_component_value(result, name, default=None):
+    if result is None:
+        return default
+    if isinstance(result, dict):
+        return result.get(name, default)
+    return getattr(result, name, default)
+
+
 if "last_result" not in st.session_state:
     st.session_state.last_result = None
 
-if "scanned_barcode" not in st.session_state:
-    st.session_state.scanned_barcode = ""
-
-if "barcode_input" not in st.session_state:
+if "barcode_input" not in st.session_state or not isinstance(st.session_state.barcode_input, str):
     st.session_state.barcode_input = ""
+
+if "last_scanned_barcode" not in st.session_state:
+    st.session_state.last_scanned_barcode = ""
+
+if "scanner_status" not in st.session_state:
+    st.session_state.scanner_status = "Idle"
+
+
+# ---- Proper custom component using Streamlit Components v2 ----
+SCANNER_HTML = """
+<div class="scanner-wrap">
+  <video id="zxing-video" playsinline muted></video>
+  <div class="scanner-buttons">
+    <button id="zxing-start" type="button">Start Camera</button>
+    <button id="zxing-stop" type="button">Stop Camera</button>
+  </div>
+  <div class="scanner-box"><strong>Status:</strong> <span id="zxing-status">Idle</span></div>
+  <div class="scanner-box"><strong>Detected Barcode:</strong> <span id="zxing-result">None</span></div>
+</div>
+"""
+
+SCANNER_CSS = """
+.scanner-wrap {
+  border: 1px solid #ddd;
+  border-radius: 12px;
+  padding: 12px;
+  background: white;
+}
+#zxing-video {
+  width: 100%;
+  max-height: 360px;
+  border-radius: 10px;
+  background: black;
+}
+.scanner-buttons {
+  display: flex;
+  gap: 10px;
+  margin-top: 10px;
+  flex-wrap: wrap;
+}
+.scanner-buttons button {
+  padding: 10px 14px;
+  border: none;
+  border-radius: 10px;
+  cursor: pointer;
+  font-weight: 600;
+}
+#zxing-start {
+  background: #d1fae5;
+}
+#zxing-stop {
+  background: #fee2e2;
+}
+.scanner-box {
+  margin-top: 10px;
+  padding: 10px;
+  border-radius: 10px;
+  background: #f8fafc;
+  border: 1px solid #e5e7eb;
+  word-break: break-all;
+}
+"""
+
+SCANNER_JS = """
+export default function(component) {
+  const { parentElement, setStateValue, setTriggerValue } = component;
+
+  const video = parentElement.querySelector("#zxing-video");
+  const startBtn = parentElement.querySelector("#zxing-start");
+  const stopBtn = parentElement.querySelector("#zxing-stop");
+  const statusEl = parentElement.querySelector("#zxing-status");
+  const resultEl = parentElement.querySelector("#zxing-result");
+
+  if (!video || !startBtn || !stopBtn || !statusEl || !resultEl) {
+    return;
+  }
+
+  if (parentElement.__zxing_initialized) {
+    return parentElement.__zxing_cleanup || (() => {});
+  }
+  parentElement.__zxing_initialized = true;
+
+  let codeReader = null;
+  let controls = null;
+
+  const setStatus = (text) => {
+    statusEl.textContent = text;
+    setStateValue("status", text);
+  };
+
+  const stopScanner = async () => {
+    try {
+      if (controls && typeof controls.stop === "function") {
+        controls.stop();
+      }
+      if (codeReader && typeof codeReader.reset === "function") {
+        codeReader.reset();
+      }
+      controls = null;
+      codeReader = null;
+      setStatus("Scanner stopped.");
+    } catch (err) {
+      setStatus("Stop error: " + err);
+    }
+  };
+
+  const startScanner = async () => {
+    try {
+      setStatus("Loading ZXing...");
+
+      const { BrowserMultiFormatReader } = await import("https://cdn.jsdelivr.net/npm/@zxing/browser@0.1.5/+esm");
+
+      codeReader = new BrowserMultiFormatReader();
+
+      const devices = await BrowserMultiFormatReader.listVideoInputDevices();
+      if (!devices || devices.length === 0) {
+        setStatus("No camera found.");
+        return;
+      }
+
+      const selectedDeviceId = devices[0].deviceId;
+      setStatus("Starting camera...");
+
+      controls = await codeReader.decodeFromVideoDevice(
+        selectedDeviceId,
+        video,
+        (result, error) => {
+          if (result) {
+            const text = result.getText();
+            resultEl.textContent = text;
+
+            setStateValue("barcode", text);
+            setTriggerValue("scan_event", Date.now());
+            setStatus("Barcode detected.");
+
+            stopScanner();
+          } else if (error && error.name !== "NotFoundException") {
+            console.error(error);
+          }
+        }
+      );
+
+      setStatus("Scanner running.");
+    } catch (err) {
+      console.error(err);
+      setStatus("Camera error: " + err);
+    }
+  };
+
+  startBtn.addEventListener("click", startScanner);
+  stopBtn.addEventListener("click", stopScanner);
+
+  parentElement.__zxing_cleanup = () => {
+    startBtn.removeEventListener("click", startScanner);
+    stopBtn.removeEventListener("click", stopScanner);
+    stopScanner();
+  };
+
+  return parentElement.__zxing_cleanup;
+}
+"""
+
+try:
+    zxing_scanner = st.components.v2.component(
+        "zxing_barcode_scanner",
+        html=SCANNER_HTML,
+        css=SCANNER_CSS,
+        js=SCANNER_JS,
+    )
+except AttributeError:
+    st.error(
+        "Your Streamlit version is too old for this scanner component. "
+        "Run: pip install --upgrade streamlit"
+    )
+    st.stop()
 
 
 st.title("Inventory Sorting System")
-st.caption("Streamlit frontend with ZXing-JS camera barcode scanner")
+st.caption("Streamlit frontend with a proper ZXing-JS scanner component")
 
 with st.sidebar:
     st.header("Backend Settings")
@@ -62,139 +240,20 @@ left, right = st.columns([1.15, 1])
 with left:
     st.subheader("Camera Barcode Scanner")
 
-    scanner_html = """
-    <!DOCTYPE html>
-    <html>
-    <head>
-      <meta charset="UTF-8" />
-      <script type="module">
-        import { BrowserMultiFormatReader } from 'https://cdn.jsdelivr.net/npm/@zxing/browser@0.1.5/+esm';
+    scanner_result = zxing_scanner(
+        on_scan_event_change=lambda: None,
+        on_status_change=lambda: None,
+    )
 
-        let codeReader = null;
-        let controls = null;
+    scanned_barcode = get_component_value(scanner_result, "barcode", "")
+    scanner_status = get_component_value(scanner_result, "status", "Idle")
 
-        async function startScanner() {
-          const status = document.getElementById("status");
-          const resultBox = document.getElementById("result");
+    if isinstance(scanned_barcode, str) and scanned_barcode:
+        if scanned_barcode != st.session_state.last_scanned_barcode:
+            st.session_state.last_scanned_barcode = scanned_barcode
+            st.session_state.barcode_input = scanned_barcode
 
-          try {
-            codeReader = new BrowserMultiFormatReader();
-            const videoInputDevices = await BrowserMultiFormatReader.listVideoInputDevices();
-
-            if (!videoInputDevices.length) {
-              status.innerText = "No camera found.";
-              return;
-            }
-
-            const selectedDeviceId = videoInputDevices[0].deviceId;
-            status.innerText = "Starting camera...";
-
-            controls = await codeReader.decodeFromVideoDevice(
-              selectedDeviceId,
-              'video',
-              (result, error) => {
-                if (result) {
-                  const text = result.getText();
-                  resultBox.innerText = text;
-                  status.innerText = "Barcode detected.";
-
-                  const streamlitData = {
-                    isStreamlitMessage: true,
-                    type: "streamlit:setComponentValue",
-                    value: text
-                  };
-                  window.parent.postMessage(streamlitData, "*");
-                }
-              }
-            );
-
-            status.innerText = "Scanner running.";
-          } catch (err) {
-            status.innerText = "Camera error: " + err;
-          }
-        }
-
-        function stopScanner() {
-          const status = document.getElementById("status");
-          try {
-            if (controls) {
-              controls.stop();
-            }
-            if (codeReader) {
-              codeReader.reset();
-            }
-            status.innerText = "Scanner stopped.";
-          } catch (err) {
-            status.innerText = "Stop error: " + err;
-          }
-        }
-
-        window.startScanner = startScanner;
-        window.stopScanner = stopScanner;
-      </script>
-      <style>
-        body {
-          font-family: Arial, sans-serif;
-          margin: 0;
-          padding: 0.75rem;
-          background: white;
-        }
-        .wrap {
-          border: 1px solid #ddd;
-          border-radius: 12px;
-          padding: 12px;
-        }
-        video {
-          width: 100%;
-          max-height: 320px;
-          border-radius: 10px;
-          background: black;
-        }
-        .row {
-          display: flex;
-          gap: 10px;
-          margin-top: 10px;
-          flex-wrap: wrap;
-        }
-        button {
-          padding: 10px 14px;
-          border: none;
-          border-radius: 10px;
-          cursor: pointer;
-          font-weight: 600;
-        }
-        .start { background: #d1fae5; }
-        .stop { background: #fee2e2; }
-        .box {
-          margin-top: 10px;
-          padding: 10px;
-          border-radius: 10px;
-          background: #f8fafc;
-          border: 1px solid #e5e7eb;
-          word-break: break-all;
-        }
-      </style>
-    </head>
-    <body>
-      <div class="wrap">
-        <video id="video"></video>
-        <div class="row">
-          <button class="start" onclick="startScanner()">Start Camera</button>
-          <button class="stop" onclick="stopScanner()">Stop Camera</button>
-        </div>
-        <div class="box"><strong>Status:</strong> <span id="status">Idle</span></div>
-        <div class="box"><strong>Detected Barcode:</strong> <span id="result">None</span></div>
-      </div>
-    </body>
-    </html>
-    """
-
-    scanned_value = components.html(scanner_html, height=520)
-
-    if scanned_value:
-        st.session_state.scanned_barcode = scanned_value
-        st.session_state.barcode_input = scanned_value
-        st.success(f"Scanned barcode: {scanned_value}")
+    st.info(f"Scanner status: {scanner_status}")
 
     st.divider()
     st.subheader("Scan Item")
