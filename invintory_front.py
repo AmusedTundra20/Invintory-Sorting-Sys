@@ -497,12 +497,26 @@ with right:
 st.divider()
 st.subheader("Inventory Items")
 
+sort_mode = st.selectbox(
+    "Sort inventory by",
+    ["Name", "Category", "Default Bin", "Quantity"]
+)
+
 try:
     items = get_items(api_base)
 
     if not items:
         st.info("No items found.")
     else:
+        if sort_mode == "Name":
+            items = sorted(items, key=lambda x: x["name"].lower())
+        elif sort_mode == "Category":
+            items = sorted(items, key=lambda x: x["category"].lower())
+        elif sort_mode == "Default Bin":
+            items = sorted(items, key=lambda x: x["default_bin"].lower())
+        elif sort_mode == "Quantity":
+            items = sorted(items, key=lambda x: x["quantity"], reverse=True)
+
         for item in items:
             with st.container(border=True):
                 row1, row2 = st.columns([4, 1])
