@@ -68,6 +68,9 @@ if "barcode_input" not in st.session_state or not isinstance(st.session_state.ba
 if "last_scanned_barcode" not in st.session_state:
     st.session_state.last_scanned_barcode = ""
 
+if "pending_scanned_barcode" not in st.session_state:
+    st.session_state.pending_scanned_barcode = ""
+
 if "auto_send_on_scan" not in st.session_state:
     st.session_state.auto_send_on_scan = False
 
@@ -374,36 +377,43 @@ with left:
     if selected_camera:
         st.caption(f"Selected camera: {selected_camera}")
 
+    if isinstance(scanned_barcode, str) and scanned_barcode:
+        if scanned_barcode != st.session_state.last_scanned_barcode:
+            st.session_state.last_scanned_barcode = scanned_barcode
+            st.session_state.pending_scanned_barcode = scanned_barcode
+            st.rerun()
+
     st.divider()
     st.subheader("Scan Item")
 
     auto_send = st.checkbox("Auto Send on Scan", key="auto_send_on_scan")
-
-    barcode = st.text_input("Barcode", key="barcode_input")
     action = st.selectbox("Action", ["SORT", "IN", "OUT"])
     quantity = st.number_input("Quantity", min_value=1, step=1, value=1)
     source = st.text_input("Source", value="streamlit-app-1")
     location_hint = st.text_input("Location Hint", value="A")
 
-    if isinstance(scanned_barcode, str) and scanned_barcode:
-        if scanned_barcode != st.session_state.last_scanned_barcode:
-            st.session_state.last_scanned_barcode = scanned_barcode
-            st.session_state.barcode_input = scanned_barcode
+    if st.session_state.pending_scanned_barcode:
+        scanned_now = st.session_state.pending_scanned_barcode
+        st.session_state.barcode_input = scanned_now
+        st.session_state.pending_scanned_barcode = ""
 
-            if auto_send:
-                try:
-                    result = process_scan_request(
-                        api_base=api_base,
-                        barcode=scanned_barcode,
-                        action=action,
-                        quantity=quantity,
-                        source=source,
-                        location_hint=location_hint,
-                    )
-                    st.success(result.get("message", "Scan completed."))
-                    st.rerun()
-                except Exception as e:
-                    st.error(f"Auto send failed: {e}")
+        if auto_send:
+            try:
+                result = process_scan_request(
+                    api_base=api_base,
+                    barcode=scanned_now,
+                    action=action,
+                    quantity=quantity,
+                    source=source,
+                    location_hint=location_hint,
+                )
+                st.session_state.last_result = result
+                st.success(result.get("message", "Scan completed."))
+                st.rerun()
+            except Exception as e:
+                st.error(f"Auto send failed: {e}")
+
+    barcode = st.text_input("Barcode", key="barcode_input")
 
     if st.button("Submit Scan", use_container_width=True):
         try:
