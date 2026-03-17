@@ -3,7 +3,7 @@ import streamlit as st
 
 st.set_page_config(page_title="Inventory Sorting System", layout="wide")
 
-DEFAULT_API_BASE = "https://invintory-sorting-sys-backend-production.up.railway.app/"
+DEFAULT_API_BASE = "http://127.0.0.1:8000"
 
 
 def get_items(api_base: str):
@@ -53,18 +53,23 @@ if "barcode_input" not in st.session_state or not isinstance(st.session_state.ba
 if "last_scanned_barcode" not in st.session_state:
     st.session_state.last_scanned_barcode = ""
 
-if "scanner_status" not in st.session_state:
-    st.session_state.scanner_status = "Idle"
 
-
-# ---- Proper custom component using Streamlit Components v2 ----
 SCANNER_HTML = """
 <div class="scanner-wrap">
   <video id="zxing-video" playsinline muted></video>
-  <div class="scanner-buttons">
-    <button id="zxing-start" type="button">Start Camera</button>
-    <button id="zxing-stop" type="button">Stop Camera</button>
+
+  <div class="scanner-controls">
+    <div class="control-group">
+      <label for="camera-select"><strong>Camera:</strong></label>
+      <select id="camera-select"></select>
+    </div>
+    <div class="scanner-buttons">
+      <button id="zxing-start" type="button">Start Camera</button>
+      <button id="zxing-stop" type="button">Stop Camera</button>
+      <button id="zxing-flip" type="button">Flip Camera</button>
+    </div>
   </div>
+
   <div class="scanner-box"><strong>Status:</strong> <span id="zxing-status">Idle</span></div>
   <div class="scanner-box"><strong>Detected Barcode:</strong> <span id="zxing-result">None</span></div>
 </div>
@@ -83,10 +88,23 @@ SCANNER_CSS = """
   border-radius: 10px;
   background: black;
 }
+.scanner-controls {
+  margin-top: 10px;
+}
+.control-group {
+  margin-bottom: 10px;
+}
+#camera-select {
+  width: 100%;
+  margin-top: 6px;
+  padding: 10px;
+  border-radius: 10px;
+  border: 1px solid #d1d5db;
+  background: white;
+}
 .scanner-buttons {
   display: flex;
   gap: 10px;
-  margin-top: 10px;
   flex-wrap: wrap;
 }
 .scanner-buttons button {
@@ -101,6 +119,9 @@ SCANNER_CSS = """
 }
 #zxing-stop {
   background: #fee2e2;
+}
+#zxing-flip {
+  background: #dbeafe;
 }
 .scanner-box {
   margin-top: 10px;
@@ -119,10 +140,12 @@ export default function(component) {
   const video = parentElement.querySelector("#zxing-video");
   const startBtn = parentElement.querySelector("#zxing-start");
   const stopBtn = parentElement.querySelector("#zxing-stop");
+  const flipBtn = parentElement.querySelector("#zxing-flip");
+  const cameraSelect = parentElement.querySelector("#camera-select");
   const statusEl = parentElement.querySelector("#zxing-status");
   const resultEl = parentElement.querySelector("#zxing-result");
 
-  if (!video || !startBtn || !stopBtn || !statusEl || !resultEl) {
+  if (!video || !startBtn || !stopBtn || !flipBtn || !cameraSelect || !statusEl || !resultEl) {
     return;
   }
 
@@ -133,10 +156,43 @@ export default function(component) {
 
   let codeReader = null;
   let controls = null;
+  let devices = [];
+  let currentDeviceIndex = 0;
 
   const setStatus = (text) => {
     statusEl.textContent = text;
     setStateValue("status", text);
+  };
+
+  const setSelectedDevice = (index) => {
+    if (!devices.length) return;
+    currentDeviceIndex = ((index % devices.length) + devices.length) % devices.length;
+    cameraSelect.value = devices[currentDeviceIndex].deviceId;
+    setStateValue("selected_camera", devices[currentDeviceIndex].label || `Camera ${currentDeviceIndex + 1}`);
+  };
+
+  const populateCameraList = () => {
+    cameraSelect.innerHTML = "";
+    devices.forEach((device, index) => {
+      const option = document.createElement("option");
+      option.value = device.deviceId;
+      option.textContent = device.label || `Camera ${index + 1}`;
+      cameraSelect.appendChild(option);
+    });
+    if (devices.length) {
+      setSelectedDevice(currentDeviceIndex);
+    }
+  };
+
+  const chooseBestDefaultCamera = () => {
+    if (!devices.length) return 0;
+
+    const backIndex = devices.findIndex((d) =>
+      /back|rear|environment/i.test(d.label || "")
+    );
+    if (backIndex !== -1) return backIndex;
+
+    return devices.length > 1 ? 1 : 0;
   };
 
   const stopScanner = async () => {
@@ -148,28 +204,37 @@ export default function(component) {
         codeReader.reset();
       }
       controls = null;
-      codeReader = null;
       setStatus("Scanner stopped.");
     } catch (err) {
       setStatus("Stop error: " + err);
     }
   };
 
-  const startScanner = async () => {
+  const startScanner = async (deviceIndex = currentDeviceIndex) => {
     try {
-      setStatus("Loading ZXing...");
+      await stopScanner();
 
-      const { BrowserMultiFormatReader } = await import("https://cdn.jsdelivr.net/npm/@zxing/browser@0.1.5/+esm");
+      if (!codeReader) {
+        const mod = await import("https://cdn.jsdelivr.net/npm/@zxing/browser@0.1.5/+esm");
+        codeReader = new mod.BrowserMultiFormatReader();
+      }
 
-      codeReader = new BrowserMultiFormatReader();
+      const mod = await import("https://cdn.jsdelivr.net/npm/@zxing/browser@0.1.5/+esm");
+      devices = await mod.BrowserMultiFormatReader.listVideoInputDevices();
 
-      const devices = await BrowserMultiFormatReader.listVideoInputDevices();
       if (!devices || devices.length === 0) {
         setStatus("No camera found.");
         return;
       }
 
-      const selectedDeviceId = devices[0].deviceId;
+      if (!cameraSelect.options.length || cameraSelect.options.length !== devices.length) {
+        currentDeviceIndex = chooseBestDefaultCamera();
+        populateCameraList();
+      }
+
+      setSelectedDevice(deviceIndex);
+      const selectedDeviceId = devices[currentDeviceIndex].deviceId;
+
       setStatus("Starting camera...");
 
       controls = await codeReader.decodeFromVideoDevice(
@@ -179,11 +244,9 @@ export default function(component) {
           if (result) {
             const text = result.getText();
             resultEl.textContent = text;
-
             setStateValue("barcode", text);
             setTriggerValue("scan_event", Date.now());
             setStatus("Barcode detected.");
-
             stopScanner();
           } else if (error && error.name !== "NotFoundException") {
             console.error(error);
@@ -198,12 +261,52 @@ export default function(component) {
     }
   };
 
-  startBtn.addEventListener("click", startScanner);
+  const flipCamera = async () => {
+    if (!devices.length) {
+      setStatus("No cameras available to flip.");
+      return;
+    }
+    const nextIndex = (currentDeviceIndex + 1) % devices.length;
+    await startScanner(nextIndex);
+  };
+
+  const handleCameraSelect = async () => {
+    const selectedId = cameraSelect.value;
+    const index = devices.findIndex((d) => d.deviceId === selectedId);
+    if (index !== -1) {
+      await startScanner(index);
+    }
+  };
+
+  const initDevices = async () => {
+    try {
+      const mod = await import("https://cdn.jsdelivr.net/npm/@zxing/browser@0.1.5/+esm");
+      devices = await mod.BrowserMultiFormatReader.listVideoInputDevices();
+      if (!devices || devices.length === 0) {
+        setStatus("No camera found.");
+        return;
+      }
+      currentDeviceIndex = chooseBestDefaultCamera();
+      populateCameraList();
+      setStatus("Camera list loaded.");
+    } catch (err) {
+      console.error(err);
+      setStatus("Could not load cameras.");
+    }
+  };
+
+  startBtn.addEventListener("click", () => startScanner(currentDeviceIndex));
   stopBtn.addEventListener("click", stopScanner);
+  flipBtn.addEventListener("click", flipCamera);
+  cameraSelect.addEventListener("change", handleCameraSelect);
+
+  initDevices();
 
   parentElement.__zxing_cleanup = () => {
-    startBtn.removeEventListener("click", startScanner);
+    startBtn.removeEventListener("click", () => startScanner(currentDeviceIndex));
     stopBtn.removeEventListener("click", stopScanner);
+    flipBtn.removeEventListener("click", flipCamera);
+    cameraSelect.removeEventListener("change", handleCameraSelect);
     stopScanner();
   };
 
@@ -219,15 +322,12 @@ try:
         js=SCANNER_JS,
     )
 except AttributeError:
-    st.error(
-        "Your Streamlit version is too old for this scanner component. "
-        "Run: pip install --upgrade streamlit"
-    )
+    st.error("Your Streamlit version is too old. Run: pip install --upgrade streamlit")
     st.stop()
 
 
 st.title("Inventory Sorting System")
-st.caption("Streamlit frontend with a proper ZXing-JS scanner component")
+st.caption("Streamlit frontend with ZXing-JS barcode scanner")
 
 with st.sidebar:
     st.header("Backend Settings")
@@ -243,10 +343,12 @@ with left:
     scanner_result = zxing_scanner(
         on_scan_event_change=lambda: None,
         on_status_change=lambda: None,
+        on_selected_camera_change=lambda: None,
     )
 
     scanned_barcode = get_component_value(scanner_result, "barcode", "")
     scanner_status = get_component_value(scanner_result, "status", "Idle")
+    selected_camera = get_component_value(scanner_result, "selected_camera", "")
 
     if isinstance(scanned_barcode, str) and scanned_barcode:
         if scanned_barcode != st.session_state.last_scanned_barcode:
@@ -254,6 +356,8 @@ with left:
             st.session_state.barcode_input = scanned_barcode
 
     st.info(f"Scanner status: {scanner_status}")
+    if selected_camera:
+        st.caption(f"Selected camera: {selected_camera}")
 
     st.divider()
     st.subheader("Scan Item")
