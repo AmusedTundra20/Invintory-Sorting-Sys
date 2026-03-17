@@ -3,7 +3,7 @@ import streamlit as st
 
 st.set_page_config(page_title="Inventory Sorting System", layout="wide")
 
-DEFAULT_API_BASE = "https://invintory-sorting-sys-backend-production.up.railway.app/"
+DEFAULT_API_BASE = "https://invintory-sorting-sys-backend-production.up.railway.app"
 
 
 def get_items(api_base: str):
@@ -44,6 +44,21 @@ def get_component_value(result, name, default=None):
     return getattr(result, name, default)
 
 
+def process_scan_request(api_base: str, barcode: str, action: str, quantity: int, source: str, location_hint: str):
+    result = submit_scan(
+        api_base,
+        {
+            "barcode": barcode.strip(),
+            "action": action,
+            "quantity": int(quantity),
+            "source": source.strip() or "streamlit-app-1",
+            "location_hint": location_hint.strip() if location_hint else None,
+        },
+    )
+    st.session_state.last_result = result
+    return result
+
+
 if "last_result" not in st.session_state:
     st.session_state.last_result = None
 
@@ -52,6 +67,9 @@ if "barcode_input" not in st.session_state or not isinstance(st.session_state.ba
 
 if "last_scanned_barcode" not in st.session_state:
     st.session_state.last_scanned_barcode = ""
+
+if "auto_send_on_scan" not in st.session_state:
+    st.session_state.auto_send_on_scan = False
 
 
 SCANNER_HTML = """
@@ -278,6 +296,8 @@ export default function(component) {
     }
   };
 
+  const handleStart = () => startScanner(currentDeviceIndex);
+
   const initDevices = async () => {
     try {
       const mod = await import("https://cdn.jsdelivr.net/npm/@zxing/browser@0.1.5/+esm");
@@ -295,7 +315,7 @@ export default function(component) {
     }
   };
 
-  startBtn.addEventListener("click", () => startScanner(currentDeviceIndex));
+  startBtn.addEventListener("click", handleStart);
   stopBtn.addEventListener("click", stopScanner);
   flipBtn.addEventListener("click", flipCamera);
   cameraSelect.addEventListener("change", handleCameraSelect);
@@ -303,7 +323,7 @@ export default function(component) {
   initDevices();
 
   parentElement.__zxing_cleanup = () => {
-    startBtn.removeEventListener("click", () => startScanner(currentDeviceIndex));
+    startBtn.removeEventListener("click", handleStart);
     stopBtn.removeEventListener("click", stopScanner);
     flipBtn.removeEventListener("click", flipCamera);
     cameraSelect.removeEventListener("change", handleCameraSelect);
@@ -350,11 +370,6 @@ with left:
     scanner_status = get_component_value(scanner_result, "status", "Idle")
     selected_camera = get_component_value(scanner_result, "selected_camera", "")
 
-    if isinstance(scanned_barcode, str) and scanned_barcode:
-        if scanned_barcode != st.session_state.last_scanned_barcode:
-            st.session_state.last_scanned_barcode = scanned_barcode
-            st.session_state.barcode_input = scanned_barcode
-
     st.info(f"Scanner status: {scanner_status}")
     if selected_camera:
         st.caption(f"Selected camera: {selected_camera}")
@@ -362,28 +377,47 @@ with left:
     st.divider()
     st.subheader("Scan Item")
 
+    auto_send = st.checkbox("Auto Send on Scan", key="auto_send_on_scan")
+
     barcode = st.text_input("Barcode", key="barcode_input")
     action = st.selectbox("Action", ["SORT", "IN", "OUT"])
     quantity = st.number_input("Quantity", min_value=1, step=1, value=1)
     source = st.text_input("Source", value="streamlit-app-1")
     location_hint = st.text_input("Location Hint", value="A")
 
+    if isinstance(scanned_barcode, str) and scanned_barcode:
+        if scanned_barcode != st.session_state.last_scanned_barcode:
+            st.session_state.last_scanned_barcode = scanned_barcode
+            st.session_state.barcode_input = scanned_barcode
+
+            if auto_send:
+                try:
+                    result = process_scan_request(
+                        api_base=api_base,
+                        barcode=scanned_barcode,
+                        action=action,
+                        quantity=quantity,
+                        source=source,
+                        location_hint=location_hint,
+                    )
+                    st.success(result.get("message", "Scan completed."))
+                    st.rerun()
+                except Exception as e:
+                    st.error(f"Auto send failed: {e}")
+
     if st.button("Submit Scan", use_container_width=True):
         try:
             if not barcode.strip():
                 st.error("Enter or scan a barcode first.")
             else:
-                result = submit_scan(
-                    api_base,
-                    {
-                        "barcode": barcode.strip(),
-                        "action": action,
-                        "quantity": int(quantity),
-                        "source": source.strip() or "streamlit-app-1",
-                        "location_hint": location_hint.strip() or None,
-                    },
+                result = process_scan_request(
+                    api_base=api_base,
+                    barcode=barcode,
+                    action=action,
+                    quantity=quantity,
+                    source=source,
+                    location_hint=location_hint,
                 )
-                st.session_state.last_result = result
                 st.success(result.get("message", "Scan completed."))
                 st.rerun()
         except Exception as e:
