@@ -3,7 +3,7 @@ import streamlit as st
 
 st.set_page_config(page_title="Inventory Sorting System", layout="wide")
 
-DEFAULT_API_BASE = "http://127.0.0.1:8000"
+DEFAULT_API_BASE = "https://invintory-sorting-sys-backend-production.up.railway.app/"
 
 
 def get_items(api_base: str):
